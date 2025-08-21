@@ -4,6 +4,7 @@ import os
 import subprocess
 import platform
 import logging
+import shutil
 from pathlib import Path
 from typing import Optional, List, Dict, Union
 
@@ -108,7 +109,6 @@ async def download_whisper_model(
                 break
         
         if original_script:
-            import shutil
             shutil.copy2(original_script, download_script)
             os.chmod(download_script, 0o755)
         else:
@@ -116,7 +116,6 @@ async def download_whisper_model(
             # (happens during install when models_dir is install_dir/models)
             parent_script = models_dir.parent / "models" / "download-ggml-model.sh"
             if parent_script.exists() and parent_script != download_script:
-                import shutil
                 shutil.copy2(parent_script, download_script)
                 os.chmod(download_script, 0o755)
             else:
@@ -146,11 +145,43 @@ async def download_whisper_model(
         
         # Check for Core ML support on Apple Silicon
         if platform.system() == "Darwin" and platform.machine() == "arm64":
+            # Check if Core ML dependencies are needed
+            requirements_file = Path(models_dir) / "requirements-coreml.txt"
+            if requirements_file.exists() and shutil.which("uv"):
+                # Try to check if torch is available
+                try:
+                    subprocess.run(
+                        ["uv", "run", "python", "-c", "import torch"],
+                        capture_output=True,
+                        check=True,
+                        timeout=5
+                    )
+                    torch_available = True
+                except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                    torch_available = False
+                
+                if not torch_available:
+                    logger.info("Installing Core ML dependencies for optimal performance...")
+                    try:
+                        subprocess.run(
+                            ["uv", "pip", "install", "-r", str(requirements_file)],
+                            capture_output=True,
+                            check=True,
+                            timeout=120
+                        )
+                        logger.info("Core ML dependencies installed successfully")
+                    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+                        logger.info("Could not install Core ML dependencies automatically. Whisper will still work with Metal acceleration.")
+            
             core_ml_result = await convert_to_coreml(model, models_dir)
             if core_ml_result["success"]:
                 logger.info(f"Core ML conversion completed for {model}")
             else:
-                logger.warning(f"Core ML conversion failed: {core_ml_result.get('error')}")
+                error_msg = core_ml_result.get('error', '')
+                if 'torch' in error_msg or 'ModuleNotFoundError' in error_msg:
+                    logger.info(f"Core ML conversion skipped - PyTorch not installed. Whisper will still work with Metal acceleration.")
+                else:
+                    logger.warning(f"Core ML conversion failed: {error_msg}")
         
         return {
             "success": True,
@@ -200,26 +231,60 @@ async def convert_to_coreml(
         }
     
     # Find the Core ML conversion script
-    whisper_dir = Path.home() / ".voicemode" / "whisper.cpp"
-    convert_script = whisper_dir / "models" / "generate-coreml-model.sh"
+    # Try new location first, then fall back to old location
+    whisper_dir = Path.home() / ".voicemode" / "services" / "whisper"
+    if not whisper_dir.exists():
+        whisper_dir = Path.home() / ".voicemode" / "whisper.cpp"
+    
+    # Use the uv wrapper script if it exists, otherwise fallback to original
+    convert_script = whisper_dir / "models" / "generate-coreml-model-uv.sh"
+    if not convert_script.exists():
+        convert_script = whisper_dir / "models" / "generate-coreml-model.sh"
     
     if not convert_script.exists():
         return {
             "success": False,
-            "error": "Core ML conversion script not found"
+            "error": f"Core ML conversion script not found at {convert_script}"
         }
     
     logger.info(f"Converting {model} to Core ML format...")
     
     try:
-        # Run conversion script
-        result = subprocess.run(
-            ["bash", str(convert_script), model],
-            cwd=str(models_dir),
-            capture_output=True,
-            text=True,
-            check=True
-        )
+        # Check if we should use uv for Python dependencies
+        # Try to find the voicemode project root for uv
+        voicemode_root = None
+        current = Path(__file__).parent
+        while current != current.parent:
+            if (current / "pyproject.toml").exists():
+                with open(current / "pyproject.toml") as f:
+                    if 'name = "voicemode"' in f.read():
+                        voicemode_root = current
+                        break
+            current = current.parent
+        
+        # If we found voicemode root and uv is available, use it
+        if voicemode_root and shutil.which("uv"):
+            # Run the Python script directly with uv instead of using the bash wrapper
+            logger.info("Using uv for Core ML conversion with Python dependencies")
+            result = subprocess.run(
+                ["uv", "run", "--project", str(voicemode_root), "python", 
+                 str(whisper_dir / "models" / "convert-whisper-to-coreml.py"),
+                 "--model", model, "--encoder-only", "True", "--optimize-ane", "True"],
+                cwd=str(whisper_dir),
+                capture_output=True,
+                text=True,
+                check=True
+            )
+        else:
+            # Fallback to original bash script
+            logger.info("Using standard Python for Core ML conversion")
+            result = subprocess.run(
+                ["bash", str(convert_script), model],
+                cwd=str(models_dir),
+                capture_output=True,
+                text=True,
+                check=True
+            )
         
         if coreml_path.exists():
             return {
@@ -234,10 +299,16 @@ async def convert_to_coreml(
             }
             
     except subprocess.CalledProcessError as e:
-        logger.error(f"Core ML conversion failed: {e.stderr}")
+        error_text = e.stderr if e.stderr else ""
+        if "ModuleNotFoundError" in error_text and "torch" in error_text:
+            return {
+                "success": False,
+                "error": "PyTorch not installed - Core ML conversion requires: pip install torch coremltools"
+            }
+        logger.error(f"Core ML conversion failed: {error_text}")
         return {
             "success": False,
-            "error": f"Conversion failed: {e.stderr}"
+            "error": f"Conversion failed: {error_text}"
         }
     except Exception as e:
         logger.error(f"Error during Core ML conversion: {e}")

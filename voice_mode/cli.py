@@ -7,6 +7,7 @@ import os
 import warnings
 import click
 
+
 # Suppress known deprecation warnings for better user experience
 # These apply to both CLI commands and MCP server operation
 # They can be shown with VOICEMODE_DEBUG=true or --debug flag
@@ -315,7 +316,7 @@ def health():
     import subprocess
     try:
         result = subprocess.run(
-            ["curl", "-s", "http://127.0.0.1:8090/health"],
+            ["curl", "-s", "http://127.0.0.1:2022/health"],
             capture_output=True, text=True, timeout=5
         )
         if result.returncode == 0:
@@ -329,7 +330,7 @@ def health():
             except json.JSONDecodeError:
                 click.echo("✅ Whisper is responding (non-JSON response)")
         else:
-            click.echo("❌ Whisper not responding on port 8090")
+            click.echo("❌ Whisper not responding on port 2022")
     except subprocess.TimeoutExpired:
         click.echo("❌ Whisper health check timed out")
     except Exception as e:
@@ -528,7 +529,8 @@ def whisper_models():
         get_current_model,
         is_model_installed,
         get_installed_models,
-        format_size
+        format_size,
+        has_coreml_model
     )
     
     model_dir = get_model_directory()
@@ -563,7 +565,11 @@ def whisper_models():
         
         # Format installation status
         if is_installed:
-            install_status = click.style("[✓ Installed]", fg="green")
+            # Check for Core ML model
+            if has_coreml_model(model_name):
+                install_status = click.style("[✓ Installed+ML]", fg="green")
+            else:
+                install_status = click.style("[✓ Installed]", fg="green")
         else:
             install_status = click.style("[ Download ]", fg="bright_black")
         
@@ -580,7 +586,7 @@ def whisper_models():
             desc = click.style(desc, fg="yellow")
         
         # Print row
-        click.echo(f"{status} {model_display} {install_status:14} {size_str}  {lang_str} {desc}")
+        click.echo(f"{status} {model_display} {install_status:18} {size_str}  {lang_str} {desc}")
     
     # Print footer
     click.echo("")
@@ -1537,5 +1543,229 @@ def converse(message, wait, duration, min_duration, transport, room_name, voice,
     
     # Run the async function
     asyncio.run(run_conversation())
+
+
+# Version command
+@voice_mode_main_cli.command()
+def version():
+    """Show Voice Mode version and check for updates."""
+    import requests
+    from importlib.metadata import version as get_version, PackageNotFoundError
+    
+    try:
+        current_version = get_version("voice-mode")
+    except PackageNotFoundError:
+        # Fallback for development installations
+        current_version = "development"
+    
+    click.echo(f"Voice Mode version: {current_version}")
+    
+    # Check for updates if not in development mode
+    if current_version != "development":
+        try:
+            response = requests.get(
+                "https://pypi.org/pypi/voice-mode/json",
+                timeout=2
+            )
+            if response.status_code == 200:
+                latest_version = response.json()["info"]["version"]
+                
+                # Simple version comparison (works for semantic versioning)
+                if latest_version != current_version:
+                    click.echo(f"Latest version: {latest_version} available")
+                    click.echo("Run 'voicemode update' to update")
+                else:
+                    click.echo("You are running the latest version")
+        except (requests.RequestException, KeyError, ValueError):
+            # Fail silently if we can't check for updates
+            pass
+
+
+# Update command
+@voice_mode_main_cli.command()
+@click.option('--force', is_flag=True, help='Force reinstall even if already up to date')
+def update(force):
+    """Update Voice Mode to the latest version."""
+    import subprocess
+    import requests
+    from importlib.metadata import version as get_version, PackageNotFoundError
+    
+    try:
+        current_version = get_version("voice-mode")
+    except PackageNotFoundError:
+        current_version = "development"
+    
+    if not force and current_version != "development":
+        # Check if update is needed
+        try:
+            response = requests.get(
+                "https://pypi.org/pypi/voice-mode/json",
+                timeout=2
+            )
+            if response.status_code == 200:
+                latest_version = response.json()["info"]["version"]
+                if latest_version == current_version:
+                    click.echo(f"Already running the latest version ({current_version})")
+                    return
+        except (requests.RequestException, KeyError, ValueError):
+            # Continue with update if we can't check
+            pass
+    
+    click.echo("Updating Voice Mode to the latest version...")
+    
+    # Try UV first, fall back to pip
+    try:
+        # Check if UV is available
+        result = subprocess.run(
+            ["uv", "--version"],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        
+        if result.returncode == 0:
+            # Use UV for update
+            result = subprocess.run(
+                ["uv", "pip", "install", "--upgrade", "voice-mode"],
+                capture_output=True,
+                text=True
+            )
+            if result.returncode == 0:
+                # Get new version
+                try:
+                    new_version = get_version("voice-mode")
+                    click.echo(f"✅ Successfully updated to version {new_version}")
+                except PackageNotFoundError:
+                    click.echo("✅ Successfully updated Voice Mode")
+            else:
+                click.echo(f"❌ Update failed: {result.stderr}")
+                click.echo("Try running: uv pip install --upgrade voice-mode")
+        else:
+            # Fall back to pip
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "--upgrade", "voice-mode"],
+                capture_output=True,
+                text=True
+            )
+            if result.returncode == 0:
+                try:
+                    new_version = get_version("voice-mode")
+                    click.echo(f"✅ Successfully updated to version {new_version}")
+                except PackageNotFoundError:
+                    click.echo("✅ Successfully updated Voice Mode")
+            else:
+                click.echo(f"❌ Update failed: {result.stderr}")
+                click.echo("Try running: pip install --upgrade voice-mode")
+    
+    except FileNotFoundError as e:
+        click.echo(f"❌ Update failed: {e}")
+        click.echo("Please install UV or pip and try again")
+
+
+# Completions command
+@voice_mode_main_cli.command()
+@click.argument('shell', type=click.Choice(['bash', 'zsh', 'fish']))
+@click.option('--install', is_flag=True, help='Install completion script to the appropriate location')
+def completions(shell, install):
+    """Generate or install shell completion scripts.
+    
+    Examples:
+        voicemode completions bash              # Output bash completion to stdout
+        voicemode completions bash --install    # Install to ~/.bash_completion.d/
+        voicemode completions zsh --install     # Install to ~/.zfunc/
+        voicemode completions fish --install    # Install to ~/.config/fish/completions/
+    """
+    from pathlib import Path
+    
+    # Generate completion scripts based on shell type
+    if shell == 'bash':
+        completion_script = '''# bash completion for voicemode
+_voicemode_completion() {
+    local IFS=$'\\n'
+    local response
+    
+    response=$(env _VOICEMODE_COMPLETE=bash_complete COMP_WORDS="${COMP_WORDS[*]}" COMP_CWORD=$COMP_CWORD voicemode 2>/dev/null)
+    
+    for completion in $response; do
+        IFS=',' read type value <<< "$completion"
+        
+        if [[ $type == 'plain' ]]; then
+            COMPREPLY+=("$value")
+        elif [[ $type == 'file' ]]; then
+            COMPREPLY+=("$value")
+        elif [[ $type == 'dir' ]]; then
+            COMPREPLY+=("$value")
+        fi
+    done
+    
+    return 0
+}
+
+complete -o default -F _voicemode_completion voicemode
+'''
+    
+    elif shell == 'zsh':
+        completion_script = '''#compdef voicemode
+# zsh completion for voicemode
+
+_voicemode() {
+    local -a response
+    response=(${(f)"$(env _VOICEMODE_COMPLETE=zsh_complete COMP_WORDS="${words[*]}" COMP_CWORD=$((CURRENT-1)) voicemode 2>/dev/null)"})
+    
+    for completion in $response; do
+        IFS=',' read type value <<< "$completion"
+        compadd -U -- "$value"
+    done
+}
+
+compdef _voicemode voicemode
+'''
+    
+    elif shell == 'fish':
+        completion_script = '''# fish completion for voicemode
+function __fish_voicemode_complete
+    set -l response (env _VOICEMODE_COMPLETE=fish_complete COMP_WORDS=(commandline -cp) COMP_CWORD=(commandline -t) voicemode 2>/dev/null)
+    
+    for completion in $response
+        echo $completion
+    end
+end
+
+complete -c voicemode -f -a '(__fish_voicemode_complete)'
+'''
+    
+    if install:
+        # Define installation locations for each shell
+        locations = {
+            'bash': '~/.bash_completion.d/voicemode',
+            'zsh': '~/.zfunc/_voicemode',
+            'fish': '~/.config/fish/completions/voicemode.fish'
+        }
+        
+        install_path = Path(locations[shell]).expanduser()
+        install_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Write completion script to file
+        install_path.write_text(completion_script)
+        click.echo(f"✅ Installed {shell} completions to {install_path}")
+        
+        # Provide shell-specific instructions
+        if shell == 'bash':
+            click.echo("\nTo activate now, run:")
+            click.echo(f"  source {install_path}")
+            click.echo("\nTo activate permanently, add to ~/.bashrc:")
+            click.echo(f"  source {install_path}")
+        elif shell == 'zsh':
+            click.echo("\nTo activate now, run:")
+            click.echo("  autoload -U compinit && compinit")
+            click.echo("\nMake sure ~/.zfunc is in your fpath (add to ~/.zshrc):")
+            click.echo("  fpath=(~/.zfunc $fpath)")
+        elif shell == 'fish':
+            click.echo("\nCompletions will be active in new fish sessions.")
+            click.echo("To activate now, run:")
+            click.echo(f"  source {install_path}")
+    else:
+        # Output completion script to stdout
+        click.echo(completion_script)
 
 

@@ -104,7 +104,7 @@ voice-mode livekit install --auto-enable
 - Internet connection for downloads
 
 ### Port Usage
-- Whisper: 8090
+- Whisper: 2022
 - Kokoro: 8880
 - LiveKit: 7880
 

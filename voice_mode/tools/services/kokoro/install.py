@@ -243,7 +243,7 @@ async def kokoro_install(
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin</string>
+        <string>{os.path.expanduser("~/.local/bin")}:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin</string>
     </dict>
 </dict>
 </plist>"""
@@ -251,13 +251,14 @@ async def kokoro_install(
             with open(plist_path, 'w') as f:
                 f.write(plist_content)
             
-            # Load the launchagent
+            # Unload if already loaded (ignore errors)
             try:
                 subprocess.run(["launchctl", "unload", plist_path], capture_output=True)
             except:
                 pass  # Ignore if not loaded
             
-            subprocess.run(["launchctl", "load", plist_path], check=True)
+            # Don't load here - let enable_service handle it with the -w flag
+            # This prevents the "already loaded" error when enable_service runs
             result["launchagent"] = plist_path
             result["message"] += f"\nLaunchAgent installed: {plist_name}"
             

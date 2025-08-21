@@ -207,7 +207,7 @@ check_system_dependencies() {
   print_step "Checking system dependencies..."
 
   if [[ "$OS" == "macos" ]]; then
-    local packages=("node" "portaudio" "ffmpeg" "cmake")
+    local packages=("node" "portaudio" "ffmpeg" "cmake" "coreutils")
     local missing_packages=()
 
     for package in "${packages[@]}"; do
@@ -283,7 +283,7 @@ install_system_dependencies() {
         brew update
 
         # Install required packages
-        local packages=("node" "portaudio" "ffmpeg" "cmake")
+        local packages=("node" "portaudio" "ffmpeg" "cmake" "coreutils")
 
         for package in "${packages[@]}"; do
           if brew list "$package" >/dev/null 2>&1; then
@@ -419,6 +419,9 @@ install_uvx() {
         if ! grep -q "\.local/bin" "$shell_profile"; then
           echo 'export PATH="$HOME/.local/bin:$PATH"' >>"$shell_profile"
           print_success "Added UV to PATH in $shell_profile"
+          # Source the profile to make UV immediately available
+          source "$shell_profile"
+          print_success "Loaded $shell_profile to update PATH"
         fi
       fi
 
@@ -453,13 +456,20 @@ setup_local_npm() {
   if [[ "$SHELL" == *"zsh"* ]]; then
     shell_profile="$HOME/.zshrc"
   elif [[ "$SHELL" == *"bash"* ]]; then
-    shell_profile="$HOME/.bash_profile"
+    if [[ "$OS" == "macos" ]]; then
+      shell_profile="$HOME/.bash_profile"
+    else
+      shell_profile="$HOME/.bashrc"
+    fi
   fi
 
   if [ -n "$shell_profile" ] && [ -f "$shell_profile" ]; then
     if ! grep -q "\.npm-global/bin" "$shell_profile"; then
       echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >>"$shell_profile"
       print_success "Added npm global bin to PATH in $shell_profile"
+      # Source the profile to make npm immediately available
+      source "$shell_profile"
+      print_success "Loaded $shell_profile to update PATH"
     fi
   fi
 

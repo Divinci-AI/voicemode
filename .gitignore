@@ -111,3 +111,9 @@ testdir/
 
 # Profiling output
 *.prof
+
+# Model files (should be downloaded, not committed)
+models/
+*.mlpackage/
+*.mlmodel
+*.mlmodelc/

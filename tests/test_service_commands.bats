@@ -186,3 +186,122 @@ setup() {
     
     return 0
 }
+
+@test "version command runs without error" {
+    run $VOICE_MODE version
+    
+    # Check that it didn't crash
+    if [[ "$output" == *"Traceback"* ]]; then
+        echo "Command crashed with Python error:"
+        echo "$output"
+        return 1
+    fi
+    
+    if [[ "$output" == *"NameError"* ]]; then
+        echo "Command has NameError (missing import?):"
+        echo "$output"
+        return 1
+    fi
+    
+    # Check that it shows version information
+    if [[ "$output" != *"Voice Mode version:"* ]]; then
+        echo "Version command didn't show version info:"
+        echo "$output"
+        return 1
+    fi
+    
+    # Success - command ran and showed version
+    return 0
+}
+
+@test "update command runs without error" {
+    # Test update command (it should check for updates without actually updating)
+    run $VOICE_MODE update
+    
+    # Check that it didn't crash
+    if [[ "$output" == *"Traceback"* ]]; then
+        echo "Command crashed with Python error:"
+        echo "$output"
+        return 1
+    fi
+    
+    if [[ "$output" == *"NameError"* ]]; then
+        echo "Command has NameError (missing import?):"
+        echo "$output"
+        return 1
+    fi
+    
+    # Check that it shows appropriate message
+    # Should either say "Already running the latest version" or "Updating Voice Mode"
+    if [[ "$output" != *"Already running"* ]] && [[ "$output" != *"Updating Voice Mode"* ]]; then
+        echo "Update command didn't show expected output:"
+        echo "$output"
+        return 1
+    fi
+    
+    # Success - command ran without errors
+    return 0
+}
+
+@test "completions command generates bash completions" {
+    # Test that completions command generates bash completion script
+    run $VOICE_MODE completions bash
+    
+    # Check that it didn't crash
+    if [[ "$output" == *"Traceback"* ]]; then
+        echo "Command crashed with Python error:"
+        echo "$output"
+        return 1
+    fi
+    
+    # Should contain bash completion function
+    if [[ "$output" != *"_voicemode_completion"* ]]; then
+        echo "Completions didn't generate bash function:"
+        echo "$output"
+        return 1
+    fi
+    
+    return 0
+}
+
+@test "completions command generates zsh completions" {
+    # Test that completions command generates zsh completion script
+    run $VOICE_MODE completions zsh
+    
+    # Check that it didn't crash
+    if [[ "$output" == *"Traceback"* ]]; then
+        echo "Command crashed with Python error:"
+        echo "$output"
+        return 1
+    fi
+    
+    # Should contain zsh completion function
+    if [[ "$output" != *"#compdef voicemode"* ]]; then
+        echo "Completions didn't generate zsh function:"
+        echo "$output"
+        return 1
+    fi
+    
+    return 0
+}
+
+@test "completions command generates fish completions" {
+    # Test that completions command generates fish completion script
+    run $VOICE_MODE completions fish
+    
+    # Check that it didn't crash
+    if [[ "$output" == *"Traceback"* ]]; then
+        echo "Command crashed with Python error:"
+        echo "$output"
+        return 1
+    fi
+    
+    # Should contain fish completion function
+    if [[ "$output" != *"__fish_voicemode_complete"* ]]; then
+        echo "Completions didn't generate fish function:"
+        echo "$output"
+        return 1
+    fi
+    
+    return 0
+}

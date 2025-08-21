@@ -283,6 +283,11 @@ async def whisper_install(
 WHISPER_DIR="{install_dir}"
 LOG_FILE="{os.path.join(voicemode_dir, 'whisper-server.log')}"
 
+# Source voicemode configuration if it exists
+if [ -f "{voicemode_dir}/voicemode.env" ]; then
+    source "{voicemode_dir}/voicemode.env"
+fi
+
 # Model selection with environment variable support
 MODEL_NAME="${{VOICEMODE_WHISPER_MODEL:-{model}}}"
 MODEL_PATH="$WHISPER_DIR/models/ggml-$MODEL_NAME.bin"
@@ -369,13 +374,14 @@ exec "$SERVER_BIN" \\
             with open(plist_path, 'w') as f:
                 f.write(plist_content)
             
-            # Load the launchagent
+            # Unload if already loaded (ignore errors)
             try:
                 subprocess.run(["launchctl", "unload", plist_path], capture_output=True)
             except:
                 pass  # Ignore if not loaded
             
-            subprocess.run(["launchctl", "load", plist_path], check=True)
+            # Don't load here - let enable_service handle it with the -w flag
+            # This prevents the "already loaded" error when enable_service runs
             
             # Handle auto_enable
             enable_message = ""

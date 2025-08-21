@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.27.0] - 2025-08-20
+
 ### Added
+- **CLI version and update commands**
+  - New `voice-mode version` command to display current version
+  - New `voice-mode update` command to upgrade to latest version
+  - Comprehensive bats tests for version and update functionality
+  - Automatic version detection from package metadata
+  
 - **Shell completion support for CLI**
   - New `voice-mode completion` command group with bash, zsh, and fish subcommands
   - Automatic tab completion for all commands, options, and arguments
@@ -60,6 +68,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Model status checks now verify both file existence and selection
 
 ### Fixed
+- **macOS installation improvements**
+  - Added coreutils dependency for timeout command support
+  - Fixed duplicate launchctl load in service installers
+  - Improved zsh PATH configuration by sourcing profile after UV/npm additions
+  - Skip sudo prompts on macOS to prevent installation issues
+  
+- **Test suite fixes**
+  - Fixed deprecation warning appearing in help output
+  - Renamed deprecated `.voicemode.env` to `voicemode.env` to fix test failures
+  
 - Whisper model management now properly uses voicemode.env configuration file
 - Test suite updated for all API changes and return value structures
 - Resolved all CI test failures related to service status and diagnostics

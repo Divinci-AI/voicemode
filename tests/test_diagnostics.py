@@ -90,7 +90,7 @@ class TestDiagnosticTools:
                 }
             },
             "stt": {
-                "http://127.0.0.1:8090/v1": {
+                "http://127.0.0.1:2022/v1": {
                     "healthy": True,
                     "models": ["whisper-1"],
                     "response_time_ms": 200.0,
@@ -114,7 +114,7 @@ class TestDiagnosticTools:
             
             # Should include STT providers
             assert "STT" in result or "Speech-to-Text" in result
-            assert "8090" in result  # Port number
+            assert "2022" in result  # Port number
             
             # Should show health status
             assert "healthy" in result.lower() or "✅" in result or "available" in result.lower()

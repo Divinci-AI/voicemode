@@ -147,10 +147,12 @@ def has_coreml_model(model_name: str) -> bool:
     model_dir = get_model_directory()
     model_info = WHISPER_MODELS[model_name]
     
-    # Core ML model would be named like ggml-large-v2-encoder.mlmodelc
-    coreml_path = model_dir / f"ggml-{model_name}-encoder.mlmodelc"
+    # Core ML models can be either compiled (.mlmodelc) or package (.mlpackage)
+    # Check for both formats
+    coreml_compiled = model_dir / f"ggml-{model_name}-encoder.mlmodelc"
+    coreml_package = model_dir / f"coreml-encoder-{model_name}.mlpackage"
     
-    return coreml_path.exists()
+    return coreml_compiled.exists() or coreml_package.exists()
 
 
 def get_installed_models() -> List[str]:
@@ -215,7 +217,7 @@ def set_current_model(model_name: str) -> None:
     import re
     
     # Configuration file path
-    config_path = Path.home() / ".voicemode" / ".voicemode.env"
+    config_path = Path.home() / ".voicemode" / "voicemode.env"
     
     # Ensure directory exists
     config_path.parent.mkdir(parents=True, exist_ok=True)
