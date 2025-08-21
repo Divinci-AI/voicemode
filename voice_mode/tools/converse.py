@@ -112,9 +112,49 @@ async def startup_initialization():
     logger.info("Initializing provider registry...")
     await provider_registry.initialize()
     
-    # Check if we should auto-start Kokoro
+    # Auto-start services if configured or if PREFER_LOCAL is enabled
+    auto_start_services = os.getenv("VOICE_MODE_AUTO_START_SERVICES", "").lower() in ("true", "1", "yes", "on")
     auto_start_kokoro = os.getenv("VOICE_MODE_AUTO_START_KOKORO", "").lower() in ("true", "1", "yes", "on")
-    if auto_start_kokoro:
+    auto_start_whisper = os.getenv("VOICE_MODE_AUTO_START_WHISPER", "").lower() in ("true", "1", "yes", "on")
+    
+    # If PREFER_LOCAL is true and no OpenAI key is set, auto-start local services
+    if PREFER_LOCAL and not OPENAI_API_KEY:
+        auto_start_services = True
+        logger.info("PREFER_LOCAL is enabled and no OpenAI API key found - will auto-start local services")
+    
+    # Start Whisper if needed
+    if auto_start_services or auto_start_whisper:
+        try:
+            # Check if Whisper is already running
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                base_url = 'http://127.0.0.1:2022'  # Whisper default
+                health_url = f"{base_url}/health"
+                response = await client.get(health_url)
+                
+                if response.status_code == 200:
+                    logger.info("Whisper STT is already running")
+                else:
+                    raise Exception("Not running")
+        except:
+            # Whisper is not running, start it using the service management tools
+            logger.info("Auto-starting Whisper STT service...")
+            try:
+                # Import service management functions
+                from voice_mode.tools.service import start_service
+                
+                # Start whisper service
+                result = await start_service("whisper")
+                if "started" in result.lower() or "running" in result.lower():
+                    logger.info("✓ Whisper STT started successfully")
+                    # Give it time to initialize
+                    await asyncio.sleep(3.0)
+                else:
+                    logger.warning(f"Whisper start result: {result}")
+            except Exception as e:
+                logger.error(f"Error auto-starting Whisper: {e}")
+    
+    # Start Kokoro if needed
+    if auto_start_services or auto_start_kokoro:
         try:
             # Check if Kokoro is already running
             async with httpx.AsyncClient(timeout=3.0) as client:
@@ -123,35 +163,31 @@ async def startup_initialization():
                 response = await client.get(health_url)
                 
                 if response.status_code == 200:
-                    logger.info("Kokoro TTS is already running externally")
+                    logger.info("Kokoro TTS is already running")
                 else:
                     raise Exception("Not running")
         except:
-            # Kokoro is not running, start it
+            # Kokoro is not running, start it using the service management tools
             logger.info("Auto-starting Kokoro TTS service...")
             try:
-                # Import here to avoid circular dependency
-                import subprocess
-                if "kokoro" not in service_processes:
-                    process = subprocess.Popen(
-                        ["uvx", "kokoro-fastapi"],
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        text=True,
-                        env={**os.environ}
-                    )
-                    service_processes["kokoro"] = process
-                    
-                    # Wait a moment for it to start
-                    await asyncio.sleep(2.0)
-                    
-                    # Verify it started
-                    if process.poll() is None:
-                        logger.info(f"✓ Kokoro TTS started successfully (PID: {process.pid})")
-                    else:
-                        logger.error("Failed to start Kokoro TTS")
+                # Import service management functions
+                from voice_mode.tools.service import start_service
+                
+                # Start kokoro service
+                result = await start_service("kokoro")
+                if "started" in result.lower() or "running" in result.lower():
+                    logger.info("✓ Kokoro TTS started successfully")
+                    # Give it time to initialize and load models
+                    await asyncio.sleep(5.0)
+                else:
+                    logger.warning(f"Kokoro start result: {result}")
             except Exception as e:
                 logger.error(f"Error auto-starting Kokoro: {e}")
+    
+    # Refresh provider registry after starting services
+    if auto_start_services or auto_start_kokoro or auto_start_whisper:
+        logger.info("Refreshing provider registry after service startup...")
+        await provider_registry.initialize()
     
     # Log initial status
     logger.info("Service initialization complete")

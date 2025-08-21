@@ -1,0 +1,130 @@
+# Pre-commit configuration for Voice Coordination System
+# Install with: pip install pre-commit && pre-commit install
+
+repos:
+  # Code quality checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '\.md$'
+      - id: end-of-file-fixer
+      - id: check-yaml
+        exclude: 'tests/.*'
+      - id: check-json
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-merge-conflict
+      - id: debug-statements
+      - id: check-executables-have-shebangs
+
+  # Python code formatting
+  - repo: https://github.com/psf/black
+    rev: 23.3.0
+    hooks:
+      - id: black
+        language_version: python3
+        files: '\.py$'
+        exclude: '(build/|dist/|\.venv/)'
+
+  # Python import sorting
+  - repo: https://github.com/pycqa/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+        args: ["--profile", "black"]
+        files: '\.py$'
+
+  # Python linting
+  - repo: https://github.com/pycqa/flake8
+    rev: 6.0.0
+    hooks:
+      - id: flake8
+        args: 
+          - '--max-line-length=88'
+          - '--extend-ignore=E203,W503,F401'
+        files: '\.py$'
+        exclude: '(build/|dist/|\.venv/|__pycache__/)'
+
+  # Security checks
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.5
+    hooks:
+      - id: bandit
+        args: ['-r', '.', '-f', 'json', '-o', 'bandit-report.json']
+        files: '\.py$'
+        exclude: '(tests/|\.venv/|build/|dist/)'
+
+  # Type checking
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.4.1
+    hooks:
+      - id: mypy
+        additional_dependencies: [types-requests, types-websockets]
+        args: ['--ignore-missing-imports', '--strict-optional']
+        files: '\.py$'
+        exclude: '(tests/|\.venv/|build/|dist/)'
+
+  # Unit tests (fast tests only for pre-commit)
+  - repo: local
+    hooks:
+      - id: unit-tests
+        name: Run Unit Tests
+        entry: python -m pytest tests/test_coordination_server.py tests/test_client_hook.py -v --tb=short -x
+        language: system
+        files: '\.py$'
+        stages: [commit]
+        pass_filenames: false
+
+  # Voice coordination system validation
+  - repo: local
+    hooks:
+      - id: voice-coordination-validation
+        name: Voice Coordination System Validation
+        entry: python -c "
+import sys; 
+sys.path.append('.');
+from voice_coordination_server import VoiceCoordinationServer;
+from claude_code_voice_hook import VoiceCoordinationClient;
+print('✅ Voice coordination system imports successful')
+"
+        language: system
+        files: '(voice_coordination_server\.py|claude_code_voice_hook\.py|autoagent_voice_integration\.py)$'
+        stages: [commit]
+
+  # Documentation checks
+  - repo: local
+    hooks:
+      - id: check-voice-coordination-docs
+        name: Check Voice Coordination Documentation
+        entry: python -c "
+import os;
+docs = ['VOICE_COORDINATION_SYSTEM.md'];
+missing = [d for d in docs if not os.path.exists(d)];
+if missing: 
+    print(f'❌ Missing documentation: {missing}');
+    exit(1);
+print('✅ Documentation files present')
+"
+        language: system
+        files: '(voice_coordination_server\.py|claude_code_voice_hook\.py|autoagent_voice_integration\.py)$'
+        stages: [commit]
+
+# Global configuration
+default_language_version:
+  python: python3
+
+# Exclude patterns
+exclude: |
+  (?x)(
+    ^\.git/|
+    ^\.venv/|
+    ^venv/|
+    ^build/|
+    ^dist/|
+    __pycache__/|
+    \.egg-info/|
+    ^\.pytest_cache/|
+    ^test-reports/|
+    bandit-report\.json$
+  )
